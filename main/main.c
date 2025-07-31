@@ -9,8 +9,8 @@
 #include <esp_err.h>
 #include <esp_timer.h>
 #include <driver/uart.h>
-#include <sdmmc_cmd.h>
 #include <driver/sdspi_host.h>
+#include <sdmmc_cmd.h>
 #include <esp_vfs_fat.h>
 
 #define hxData 4
@@ -30,9 +30,10 @@
 #define sdCLK  18
 #define sdMISO 19
 #define HOST HELPER_SPI_HOST_DEFAULT
-//#define DONT_USE_MOCK_DATA 1
+#define sdMOUNT "/sdcard"
 
 const gpio_num_t cs_pins[NUM_SENSORS] = { maxCS1, maxCS2, maxCS3 };
+sdmmc_card_t* sdCARD;
 //QueueHandle_t uart_queue;
 
 
@@ -85,15 +86,15 @@ void dataLog_task()
     
 
     // Print to terminal
-    printf ("TEST STARTING!\n");
+    ESP_LOGI("TEST","TEST STARTING!\n");
     const char *header = "timestamp_ms,thrust,temp1,temp2,temp3\n";
-    printf("%s",header); 
+    ESP_LOGI("TEST","%s",header); 
 
     // Send over UART
     uart_write_bytes(loraUART, header, strlen(header)); 
 
 
-    while (1)
+    while (esp_timer_get_time()/1000<10000)
     {
         // HX711
         bool valid = true;
@@ -131,7 +132,7 @@ void dataLog_task()
         if (valid)
         {
             snprintf(dataLog, sizeof(dataLog), "%lld,%" PRIi32 ",%.2f,%.2f,%.2f\n", timestamp_ms, thrust, temps[0], temps[1], temps[2] );
-            printf("%s", dataLog);
+            ESP_LOGI("TEST","%s", dataLog);
             uart_write_bytes(loraUART, dataLog, strlen(dataLog)); // Ignore ESP_ERROR_CHECK
             //ESP_ERROR_CHECK(uart_write_bytes(UART_NUM, dataLog, strlen(dataLog))); // ESP_ERROR_CHECK -> abort(), if E220 not connected
         }else
@@ -139,12 +140,10 @@ void dataLog_task()
             ESP_LOGW("DATALOG", "Sensor error");
         }
 
-        //vTaskDelay(pdMS_TO_TICKS(10)); // 1 sample per 10ms
-        vTaskDelay(pdMS_TO_TICKS(1000)); // 1 sample per 1000ms 
+        vTaskDelay(pdMS_TO_TICKS(10)); // 1 sample per 10ms
+        //vTaskDelay(pdMS_TO_TICKS(1000)); // 1 sample per 1000ms 
     }
 }
-
-void sd_init(){} //
 
 void app_main()
 {
@@ -153,16 +152,11 @@ void app_main()
 
 ///TAREFAS
 
-// Postar no github
-// Implementar o adaptrador para Micro SD
-// Implementação com arquivo .CSV
-// Implementar a Tara para o HX711 -> Newtons?
-// Fazer o ESP32 parar a coleta após 10 segundos (10?)
+// Implementar o adaptrador para Micro SD ???
+// Implementação com arquivo .CSV 
 
 
 ///PERGUNTAS
-
-// É necessário usar ESP_ERROR_CHECK antes de toda função?
-// Configuração da frequência dos loras
+// sd precisa?
 // Arquivo .CSV
 // void dataLog_task(void *pvParameters)

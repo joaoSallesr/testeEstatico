@@ -22,6 +22,7 @@
     "task.h": "c",
     "inttypes.h": "c",
     "esp_vfs_fat.h": "c",
-    "freertos.h": "c"
+    "freertos.h": "c",
+    "sdspi_host.h": "c"
   }
 }
