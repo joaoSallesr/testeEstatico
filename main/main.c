@@ -248,16 +248,16 @@ void sd_init()
 
 void app_main()
 {
-    //esp_task_wdt_deinit();
-    //esp_task_wdt_reset(); // ???
+ 
     TaskHandle_t dataLogHandle = NULL;
     xTaskCreate(dataLog_task, "Data Log", configMINIMAL_STACK_SIZE * 5, NULL, 5, &dataLogHandle);
 
-    // Wait for the task to complete (polling)
+    // Wait for the task to complete
     while (eTaskGetState(dataLogHandle) != eDeleted) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     vTaskDelay(pdMS_TO_TICKS(100));
+    
     sd_init();
 }
 
