@@ -109,7 +109,7 @@ void dataLog_task(void *pvParameters)
 
         // HX711
         bool valid = true;
-        esp_err_t hxR = hx711_wait(&hx, 500);
+        esp_err_t hxR = hx711_wait(&hx, 10);
         int32_t thrust = 0;
         if (hxR == ESP_OK)
         {
@@ -223,10 +223,9 @@ void sd_init()
     ESP_LOGI("SD", "System mounted");
 
     // Create log file
-    int64_t timestamp = esp_timer_get_time() / 1000; // Milliseconds
-    int rdID = esp_random() % 10000; // Random id
+    int64_t rdID = esp_random() % 10000; // Random id
     char filename[64];
-    snprintf(filename, sizeof(filename), "/sdcard/log_%lld.csv", timestamp, rdID);
+    snprintf(filename, sizeof(filename), sdMOUNT "/log_%lld.csv",  rdID);
 
     FILE* f = fopen(filename, "w");
     if (f == NULL) {
@@ -241,7 +240,7 @@ void sd_init()
         fprintf(f, "%s", dataBF[i]);
     }
     fclose(f);
-    esp_vfs_fat_sdcard_unmount("/sdcard", card);
+    esp_vfs_fat_sdcard_unmount(sdMOUNT , card);
     ESP_LOGI("SD", "Saved log to: %s", filename);
     ESP_LOGI("SD", "Saved %d samples to: %s", bfINDEX, filename);
     spi_bus_free(VSPI_HOST);
