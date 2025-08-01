@@ -102,7 +102,7 @@ void dataLog_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
     while (esp_timer_get_time()/1000<=6300)
     {
-        // Time the sensors start
+        // Start collecting
         int64_t timestamp_ms = esp_timer_get_time() / 1000;
 
         // HX711
@@ -175,25 +175,14 @@ void dataLog_task(void *pvParameters)
 
 void sd_init()
 {
-    
-    // SD initializer
-    esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
-    .format_if_mount_failed = false,
-    .max_files = 5,
-    .allocation_unit_size = 16 * 1024
-};
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    host.slot = VSPI_HOST;
-
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs = sdCS;
-    slot_config.host_id = host.slot;
-
-    sdmmc_card_t *card;
-    const char* mount_point = "/sdcard";
     esp_err_t ret;
 
-    ESP_LOGI("SD", "Initializing SD card");
+    // SD config
+    esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
+        .format_if_mount_failed = false,
+        .max_files = 5,
+        .allocation_unit_size = 16 * 1024
+    };
 
     spi_bus_config_t bus_cfg = {
         .mosi_io_num = sdMOSI,
@@ -204,18 +193,33 @@ void sd_init()
         .max_transfer_sz = 4000,
     };
 
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = VSPI_HOST;
+    sdmmc_card_t *card;
+
+    ESP_LOGI("SD", "Initializing SD card");
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot_config.gpio_cs = sdCS;
+    slot_config.host_id = host.slot;
+
+    // SPI initializer
+    ESP_LOGI("SD", "Initializing SPI bus");
     ret = spi_bus_initialize(VSPI_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
     if (ret != ESP_OK) {
-        ESP_LOGE("SD", "SPI bus initialize failed: %s", esp_err_to_name(ret));
+        ESP_LOGE("SD", "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
         return;
     }
+    ESP_LOGI("SD", "SPI bus initialized");
 
-    ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_cfg, &card);
+    // System mount
+    ESP_LOGI("SD", "Mounting system");
+    ret = esp_vfs_fat_sdspi_mount(sdMOUNT, &host, &slot_config, &mount_cfg, &card);
     if (ret != ESP_OK)
     {
-        ESP_LOGE("SD", "Failed to initialize bus.");
+        ESP_LOGE("SD", "Failed to mount system.");
         return;
     }
+    ESP_LOGI("SD", "System mounted");
 
     // Create log file
     int64_t timestamp = esp_timer_get_time() / 1000; // Milliseconds
@@ -226,7 +230,7 @@ void sd_init()
     FILE* f = fopen(filename, "w");
     if (f == NULL) {
         ESP_LOGE("SD", "Failed to open file: %s", filename);
-        esp_vfs_fat_sdcard_unmount(mount_point, card);
+        esp_vfs_fat_sdcard_unmount(sdMOUNT, card);
         return;
     }
 

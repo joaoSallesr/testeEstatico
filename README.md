@@ -1,1 +1,1 @@
-Projeto do Software para teste estático de motores
+Projeto de Software para testes estáticos de motores de foguetes
