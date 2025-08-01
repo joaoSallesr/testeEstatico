@@ -23,6 +23,8 @@
     "inttypes.h": "c",
     "esp_vfs_fat.h": "c",
     "freertos.h": "c",
-    "sdspi_host.h": "c"
+    "sdspi_host.h": "c",
+    "sdmmc_defs.h": "c",
+    "uart.h": "c"
   }
 }

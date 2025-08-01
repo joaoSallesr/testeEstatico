@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <hx711.h>
@@ -8,10 +9,13 @@
 #include <esp_log.h>
 #include <esp_err.h>
 #include <esp_timer.h>
+#include <esp_task_wdt.h>
 #include <driver/uart.h>
-#include <driver/sdspi_host.h>
 #include <sdmmc_cmd.h>
+#include <driver/sdmmc_host.h>
+#include <driver/sdmmc_defs.h>
 #include <esp_vfs_fat.h>
+
 
 #define hxData 4
 #define hxClock 2
@@ -25,19 +29,21 @@
 #define loraUART 1
 #define loraBAUD 9600
 #define loraBUF (1024)
-#define sdCS   34
+#define sdCS 0
 #define sdMOSI 23
 #define sdCLK  18
 #define sdMISO 19
-#define HOST HELPER_SPI_HOST_DEFAULT
+#define bfLINES 650
+#define bfLENGTH 128
 #define sdMOUNT "/sdcard"
+#define sHOST HSPI_HOST
+
 
 const gpio_num_t cs_pins[NUM_SENSORS] = { maxCS1, maxCS2, maxCS3 };
-sdmmc_card_t* sdCARD;
-//QueueHandle_t uart_queue;
+char dataBF[bfLINES][bfLENGTH];
+int bfINDEX = 0;
 
-
-void dataLog_task()
+void dataLog_task(void *pvParameters)
 {
     // HX711 initializer
     hx711_t hx = {
@@ -60,16 +66,16 @@ void dataLog_task()
        .max_transfer_sz = 0,
        .flags = 0
     };
-    ESP_ERROR_CHECK(spi_bus_initialize(HOST, &max, 1));
+    ESP_ERROR_CHECK(spi_bus_initialize(sHOST, &max, 1));
     
     for (int i = 0; i < NUM_SENSORS; i++)
     {
-        ESP_ERROR_CHECK(max31855_init_desc(&devs[i], HOST, MAX31855_MAX_CLOCK_SPEED_HZ, cs_pins[i]));
+        ESP_ERROR_CHECK(max31855_init_desc(&devs[i], sHOST, MAX31855_MAX_CLOCK_SPEED_HZ, cs_pins[i]));
     }
 
 
     // UART initializer
-    ESP_ERROR_CHECK(uart_driver_install(1, loraBUF, loraBUF, 10, 0, 0));
+    ESP_ERROR_CHECK(uart_driver_install(loraUART, loraBUF, loraBUF, 10, 0, 0));
 
     uart_config_t uart_config = {
     .baud_rate = loraBAUD,
@@ -93,9 +99,12 @@ void dataLog_task()
     // Send over UART
     uart_write_bytes(loraUART, header, strlen(header)); 
 
-
-    while (esp_timer_get_time()/1000<10000)
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+    while (esp_timer_get_time()/1000<=6300)
     {
+        // Time the sensors start
+        int64_t timestamp_ms = esp_timer_get_time() / 1000;
+
         // HX711
         bool valid = true;
         esp_err_t hxR = hx711_wait(&hx, 500);
@@ -105,7 +114,7 @@ void dataLog_task()
             esp_err_t errH = hx711_read_average(&hx, 5, &thrust);
             if (errH != ESP_OK) {
                 valid = false;
-                break;
+                //break;
             }
         }else
         {
@@ -122,41 +131,129 @@ void dataLog_task()
             esp_err_t errM = max31855_get_temperature(&devs[i], &temp, NULL, &scv, &scg, &oc);
             if (errM != ESP_OK || scv || scg || oc) {
                 valid = false;
-                break;
+                //break;
             }
             temps[i] = temp;
         }
 
-        int64_t timestamp_ms = esp_timer_get_time() / 1000;
-        char dataLog[128];
-        if (valid)
-        {
-            snprintf(dataLog, sizeof(dataLog), "%lld,%" PRIi32 ",%.2f,%.2f,%.2f\n", timestamp_ms, thrust, temps[0], temps[1], temps[2] );
-            ESP_LOGI("TEST","%s", dataLog);
-            uart_write_bytes(loraUART, dataLog, strlen(dataLog)); // Ignore ESP_ERROR_CHECK
+        //char dataLog[128];
+        //if (valid)
+        //{
+        //    snprintf(dataLog, sizeof(dataLog), "%lld,%" PRIi32 ",%.2f,%.2f,%.2f\n", timestamp_ms, thrust, temps[0], temps[1], temps[2] );
+        //    ESP_LOGI("TEST","%s", dataLog);
+        //    uart_write_bytes(loraUART, dataLog, strlen(dataLog)); // Ignore ESP_ERROR_CHECK
             //ESP_ERROR_CHECK(uart_write_bytes(UART_NUM, dataLog, strlen(dataLog))); // ESP_ERROR_CHECK -> abort(), if E220 not connected
+        if (valid && bfINDEX < bfLINES)
+        {
+            snprintf(dataBF[bfINDEX], bfLENGTH, "%lld,%" PRIi32 ",%.2f,%.2f,%.2f\n", timestamp_ms, thrust, temps[0], temps[1], temps[2]);
+            ESP_LOGI("TEST","%s", dataBF[bfINDEX]);
+            uart_write_bytes(loraUART, dataBF[bfINDEX], strlen(dataBF[bfINDEX])); // Ignore ESP_ERROR_CHECK
+            //ESP_ERROR_CHECK(uart_write_bytes(loraUART, dataBF[bfINDEX], strlen(dataBF[bfINDEX])); // ESP_ERROR_CHECK -> abort(), if E220 not connected
+
+            bfINDEX++;        
         }else
         {
             ESP_LOGW("DATALOG", "Sensor error");
         }
-
+        
+        ESP_ERROR_CHECK(esp_task_wdt_reset());  // Reset watchdog timer
         vTaskDelay(pdMS_TO_TICKS(10)); // 1 sample per 10ms
+        
         //vTaskDelay(pdMS_TO_TICKS(1000)); // 1 sample per 1000ms 
     }
+    // Free devices
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        max31855_free_desc(&devs[i]);
+    }
+    // Free bus
+    spi_bus_free(sHOST);
+
+    ESP_ERROR_CHECK(esp_task_wdt_delete(NULL));
+    fflush(stdout);
+    vTaskDelete(NULL);
+}
+
+void sd_init()
+{
+    
+    // SD initializer
+    esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
+    .format_if_mount_failed = false,
+    .max_files = 5,
+    .allocation_unit_size = 16 * 1024
+};
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = VSPI_HOST;
+
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot_config.gpio_cs = sdCS;
+    slot_config.host_id = host.slot;
+
+    sdmmc_card_t *card;
+    const char* mount_point = "/sdcard";
+    esp_err_t ret;
+
+    ESP_LOGI("SD", "Initializing SD card");
+
+    spi_bus_config_t bus_cfg = {
+        .mosi_io_num = sdMOSI,
+        .miso_io_num = sdMISO,
+        .sclk_io_num = sdCLK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4000,
+    };
+
+    ret = spi_bus_initialize(VSPI_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
+    if (ret != ESP_OK) {
+        ESP_LOGE("SD", "SPI bus initialize failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_cfg, &card);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE("SD", "Failed to initialize bus.");
+        return;
+    }
+
+    // Create log file
+    int64_t timestamp = esp_timer_get_time() / 1000; // Milliseconds
+    //int rdID = esp_random() % 10000; // Random id
+    char filename[64];
+    snprintf(filename, sizeof(filename), "/sdcard/log_%lld.csv", timestamp);
+
+    FILE* f = fopen(filename, "w");
+    if (f == NULL) {
+        ESP_LOGE("SD", "Failed to open file: %s", filename);
+        esp_vfs_fat_sdcard_unmount(mount_point, card);
+        return;
+    }
+
+    //Write data
+    fprintf(f, "timestamp_ms,thrust,temp1,temp2,temp3\n");
+    for (int i = 0; i < bfINDEX; i++) {
+        fprintf(f, "%s", dataBF[i]);
+    }
+    fclose(f);
+    esp_vfs_fat_sdcard_unmount("/sdcard", card);
+    ESP_LOGI("SD", "Saved log to: %s", filename);
+    ESP_LOGI("SD", "Saved %d samples to: %s", bfINDEX, filename);
+    spi_bus_free(VSPI_HOST);
 }
 
 void app_main()
 {
-    xTaskCreate(dataLog_task, "Data Log", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL); // Data Log Task
+    //esp_task_wdt_deinit();
+    //esp_task_wdt_reset(); // ???
+    TaskHandle_t dataLogHandle = NULL;
+    xTaskCreate(dataLog_task, "Data Log", configMINIMAL_STACK_SIZE * 5, NULL, 5, &dataLogHandle);
+
+    // Wait for the task to complete (polling)
+    while (eTaskGetState(dataLogHandle) != eDeleted) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+    sd_init();
 }
 
-///TAREFAS
-
-// Implementar o adaptrador para Micro SD ???
-// Implementação com arquivo .CSV 
-
-
-///PERGUNTAS
-// sd precisa?
-// Arquivo .CSV
-// void dataLog_task(void *pvParameters)
