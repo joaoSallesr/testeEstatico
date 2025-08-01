@@ -10,11 +10,13 @@
 #include <esp_err.h>
 #include <esp_timer.h>
 #include <esp_task_wdt.h>
+#include <esp_random.h>
 #include <driver/uart.h>
 #include <sdmmc_cmd.h>
 #include <driver/sdmmc_host.h>
 #include <driver/sdmmc_defs.h>
 #include <esp_vfs_fat.h>
+
 
 
 #define hxData 4
@@ -175,8 +177,11 @@ void dataLog_task(void *pvParameters)
 
 void sd_init()
 {
-    esp_err_t ret;
-
+    esp_err_t errSD;
+    sdmmc_card_t *card;
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = VSPI_HOST;
+    
     // SD config
     esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
         .format_if_mount_failed = false,
@@ -193,28 +198,24 @@ void sd_init()
         .max_transfer_sz = 4000,
     };
 
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    host.slot = VSPI_HOST;
-    sdmmc_card_t *card;
-
     ESP_LOGI("SD", "Initializing SD card");
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot_config.gpio_cs = sdCS;
     slot_config.host_id = host.slot;
-
+    printf("%lld\n", esp_timer_get_time()/1000);
     // SPI initializer
     ESP_LOGI("SD", "Initializing SPI bus");
-    ret = spi_bus_initialize(VSPI_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
-    if (ret != ESP_OK) {
-        ESP_LOGE("SD", "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
+    errSD = spi_bus_initialize(VSPI_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
+    if (errSD != ESP_OK) {
+        ESP_LOGE("SD", "Failed to initialize SPI bus: %s", esp_err_to_name(errSD));
         return;
     }
     ESP_LOGI("SD", "SPI bus initialized");
 
     // System mount
     ESP_LOGI("SD", "Mounting system");
-    ret = esp_vfs_fat_sdspi_mount(sdMOUNT, &host, &slot_config, &mount_cfg, &card);
-    if (ret != ESP_OK)
+    errSD = esp_vfs_fat_sdspi_mount(sdMOUNT, &host, &slot_config, &mount_cfg, &card);
+    if (errSD != ESP_OK)
     {
         ESP_LOGE("SD", "Failed to mount system.");
         return;
@@ -223,9 +224,9 @@ void sd_init()
 
     // Create log file
     int64_t timestamp = esp_timer_get_time() / 1000; // Milliseconds
-    //int rdID = esp_random() % 10000; // Random id
+    int rdID = esp_random() % 10000; // Random id
     char filename[64];
-    snprintf(filename, sizeof(filename), "/sdcard/log_%lld.csv", timestamp);
+    snprintf(filename, sizeof(filename), "/sdcard/log_%lld.csv", timestamp, rdID);
 
     FILE* f = fopen(filename, "w");
     if (f == NULL) {
@@ -257,7 +258,7 @@ void app_main()
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     vTaskDelay(pdMS_TO_TICKS(100));
-    
+
     sd_init();
 }
 

@@ -25,6 +25,7 @@
     "freertos.h": "c",
     "sdspi_host.h": "c",
     "sdmmc_defs.h": "c",
-    "uart.h": "c"
+    "uart.h": "c",
+    "sdmmc_cmd.h": "c"
   }
 }
