@@ -29,7 +29,7 @@
 #define loraRX 17
 #define loraTX 16
 #define loraUART 1
-#define loraBAUD 9600
+#define loraBAUD 115200
 #define loraBUF (1024)
 #define sdCS 0
 #define sdMOSI 23
@@ -72,12 +72,14 @@ void dataLog_task(void *pvParameters)
     
     for (int i = 0; i < NUM_SENSORS; i++)
     {
-        ESP_ERROR_CHECK(max31855_init_desc(&devs[i], sHOST, MAX31855_MAX_CLOCK_SPEED_HZ, cs_pins[i]));
+        ESP_ERROR_CHECK(max31855_init_desc
+            (&devs[i], sHOST, MAX31855_MAX_CLOCK_SPEED_HZ, cs_pins[i]));
     }
 
 
     // UART initializer
-    ESP_ERROR_CHECK(uart_driver_install(loraUART, loraBUF, loraBUF, 10, 0, 0));
+    ESP_ERROR_CHECK(uart_driver_install
+        (loraUART, loraBUF, loraBUF, 10, 0, 0));
 
     uart_config_t uart_config = {
     .baud_rate = loraBAUD,
