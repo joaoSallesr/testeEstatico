@@ -45,7 +45,7 @@ const gpio_num_t cs_pins[NUM_SENSORS] = { maxCS1, maxCS2, maxCS3 };
 char dataBF[bfLINES][bfLENGTH];
 int bfINDEX = 0;
 
-void dataLog_task(void *pvParameters)
+void dataLog_task()
 {
     // HX711 initializer
     hx711_t hx = {
