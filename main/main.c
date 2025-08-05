@@ -79,7 +79,7 @@ void dataLog_task(void *pvParameters)
 
     // UART initializer
     ESP_ERROR_CHECK(uart_driver_install
-        (loraUART, loraBUF, loraBUF, 10, 0, 0));
+        (loraUART, loraBUF, loraBUF, 0, 0, 0));
 
     uart_config_t uart_config = {
     .baud_rate = loraBAUD,
@@ -118,7 +118,7 @@ void dataLog_task(void *pvParameters)
             esp_err_t errH = hx711_read_average(&hx, 5, &thrust);
             if (errH != ESP_OK) {
                 valid = false;
-                //break;
+                break;
             }
         }else
         {
@@ -135,7 +135,7 @@ void dataLog_task(void *pvParameters)
             esp_err_t errM = max31855_get_temperature(&devs[i], &temp, NULL, &scv, &scg, &oc);
             if (errM != ESP_OK || scv || scg || oc) {
                 valid = false;
-                //break;
+                break;
             }
             temps[i] = temp;
         }
@@ -151,8 +151,8 @@ void dataLog_task(void *pvParameters)
         {
             snprintf(dataBF[bfINDEX], bfLENGTH, "%lld,%" PRIi32 ",%.2f,%.2f,%.2f\n", timestamp_ms, thrust, temps[0], temps[1], temps[2]);
             ESP_LOGI("TEST","%s", dataBF[bfINDEX]);
-            uart_write_bytes(loraUART, dataBF[bfINDEX], strlen(dataBF[bfINDEX])); // Ignore ESP_ERROR_CHECK
-            //ESP_ERROR_CHECK(uart_write_bytes(loraUART, dataBF[bfINDEX], strlen(dataBF[bfINDEX])); // ESP_ERROR_CHECK -> abort(), if E220 not connected
+            //uart_write_bytes(loraUART, dataBF[bfINDEX], strlen(dataBF[bfINDEX])); // Ignore ESP_ERROR_CHECK
+            ESP_ERROR_CHECK(uart_write_bytes(loraUART, dataBF[bfINDEX], strlen(dataBF[bfINDEX]))); // ESP_ERROR_CHECK -> abort(), if E220 not connected
 
             bfINDEX++;        
         }else
@@ -204,7 +204,7 @@ void sd_init()
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot_config.gpio_cs = sdCS;
     slot_config.host_id = host.slot;
-    printf("%lld\n", esp_timer_get_time()/1000);
+
     // SPI initializer
     ESP_LOGI("SD", "Initializing SPI bus");
     errSD = spi_bus_initialize(VSPI_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
